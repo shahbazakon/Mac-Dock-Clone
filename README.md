@@ -2,6 +2,10 @@
 
 A highly customizable dock widget for Flutter that mimics the iconic macOS dock behavior and animations. This widget provides smooth animations, intuitive drag-and-drop functionality, and responsive hover effects.
 
+<hr>
+
+![Dock_animation](https://github.com/user-attachments/assets/824b8448-51a8-4d69-ba62-df6d7ecd8244)
+
 ## Features
 
 ### 1. Dynamic Hover Animations
