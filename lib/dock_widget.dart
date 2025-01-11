@@ -5,21 +5,26 @@ class Dock<T extends Object> extends StatefulWidget {
     super.key,
     this.items = const [],
     required this.builder,
+    this.tooltipBuilder,
   });
 
   final List<T> items;
   final Widget Function(T) builder;
+  final String Function(T)? tooltipBuilder;
 
   @override
   State<Dock<T>> createState() => _DockState<T>();
 }
 
-class _DockState<T extends Object> extends State<Dock<T>> {
+class _DockState<T extends Object> extends State<Dock<T>> with TickerProviderStateMixin {
   late List<T> _items;
   int? _hoveredIndex;
   int? _dragTargetIndex;
   final GlobalKey _dockKey = GlobalKey();
   double _itemWidth = 64.0;
+
+  // Animation controllers for bounce effect
+  final Map<int, AnimationController> _bounceControllers = {};
 
   @override
   void initState() {
@@ -27,7 +32,25 @@ class _DockState<T extends Object> extends State<Dock<T>> {
     _items = List.from(widget.items);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateItemWidth();
+      _initializeBounceControllers();
     });
+  }
+
+  void _initializeBounceControllers() {
+    for (int i = 0; i < _items.length; i++) {
+      _bounceControllers[i] = AnimationController(
+        duration: const Duration(milliseconds: 300),
+        vsync: this,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _bounceControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   void _updateItemWidth() {
@@ -39,11 +62,18 @@ class _DockState<T extends Object> extends State<Dock<T>> {
     }
   }
 
+  void _playBounceAnimation(int index) {
+    _bounceControllers[index]?.forward(from: 0.0);
+  }
+
   void onReorder(int oldIndex, int newIndex) {
     setState(() {
       if (newIndex > oldIndex) newIndex -= 1;
       final item = _items.removeAt(oldIndex);
       _items.insert(newIndex, item);
+
+      // Play bounce animation on the dropped item
+      _playBounceAnimation(newIndex);
     });
   }
 
@@ -58,8 +88,46 @@ class _DockState<T extends Object> extends State<Dock<T>> {
   }
 
   Widget _buildDragTarget(int index, Widget child) {
+    final bounceAnimation = _bounceControllers[index]?.drive(
+      TweenSequence([
+        TweenSequenceItem(
+          tween: Tween<double>(begin: 1.0, end: 1.2).chain(CurveTween(curve: Curves.easeOut)),
+          weight: 25,
+        ),
+        TweenSequenceItem(
+          tween: Tween<double>(begin: 1.2, end: 0.9).chain(CurveTween(curve: Curves.easeInOut)),
+          weight: 25,
+        ),
+        TweenSequenceItem(
+          tween: Tween<double>(begin: 0.9, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
+          weight: 50,
+        ),
+      ]),
+    );
+
+    Widget dockItem = AnimatedBuilder(
+      animation: bounceAnimation ?? const AlwaysStoppedAnimation(1.0),
+      builder: (context, child) {
+        return Transform.scale(
+          scale: bounceAnimation?.value ?? 1.0,
+          child: child,
+        );
+      },
+      child: child,
+    );
+
+    // Add tooltip if builder is provided
+    if (widget.tooltipBuilder != null) {
+      dockItem = Tooltip(
+        message: widget.tooltipBuilder!(_items[index]),
+        preferBelow: false,
+        verticalOffset: -8,
+        child: dockItem,
+      );
+    }
+
     return SizedBox(
-      height: 64, // Fixed height for drag target
+      height: 64,
       child: DragTarget<T>(
         onWillAccept: (data) {
           setState(() => _dragTargetIndex = index);
@@ -93,7 +161,7 @@ class _DockState<T extends Object> extends State<Dock<T>> {
                 margin: EdgeInsets.only(
                   left: _dragTargetIndex == index ? _itemWidth : 0,
                 ),
-                child: child,
+                child: dockItem,
               ),
             ],
           );
